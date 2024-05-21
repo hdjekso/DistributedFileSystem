@@ -19,38 +19,7 @@ void LocalFileSystem::readSuperBlock(super_t *super) {
   disk->readBlock(0, block);
 
   //copy data from `block` into `super`
-  int offset = 0;
-
-  // Copy each field from the block buffer to the superblock structure
-  memcpy(&super->inode_bitmap_addr, block + offset, sizeof(super->inode_bitmap_addr));
-  offset += sizeof(super->inode_bitmap_addr);
-
-  memcpy(&super->inode_bitmap_len, block + offset, sizeof(super->inode_bitmap_len));
-  offset += sizeof(super->inode_bitmap_len);
-
-  memcpy(&super->data_bitmap_addr, block + offset, sizeof(super->data_bitmap_addr));
-  offset += sizeof(super->data_bitmap_addr);
-
-  memcpy(&super->data_bitmap_len, block + offset, sizeof(super->data_bitmap_len));
-  offset += sizeof(super->data_bitmap_len);
-
-  memcpy(&super->inode_region_addr, block + offset, sizeof(super->inode_region_addr));
-  offset += sizeof(super->inode_region_addr);
-
-  memcpy(&super->inode_region_len, block + offset, sizeof(super->inode_region_len));
-  offset += sizeof(super->inode_region_len);
-
-  memcpy(&super->data_region_addr, block + offset, sizeof(super->data_region_addr));
-  offset += sizeof(super->data_region_addr);
-
-  memcpy(&super->data_region_len, block + offset, sizeof(super->data_region_len));
-  offset += sizeof(super->data_region_len);
-
-  memcpy(&super->num_inodes, block + offset, sizeof(super->num_inodes));
-  offset += sizeof(super->num_inodes);
-
-  memcpy(&super->num_data, block + offset, sizeof(super->num_data));
-  offset += sizeof(super->num_data);
+  memcpy(super, block, sizeof(super_t));
 }
 
 int LocalFileSystem::lookup(int parentInodeNumber, string name) {
