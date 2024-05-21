@@ -24,7 +24,7 @@ bool comparePairs(const pair<int, string> &a, const pair<int, string> &b) {
   then, within each direct_ent entry stored in each direct_ent array, print inode number and name
   lastly, recurse on child(ren), by passing (all) childInodeNum into DFS().
 */
-void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk) {
+void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk, string fullPath) {
   if (inodeNumber == 0) { // in rootDir
     cout << "Directory /" << endl;
   }
@@ -40,7 +40,8 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk) {
   vector<pair<int, string>> dirEntsInfo; //stores inum/ name pairs of each dir entry
   //vector<int> dirEntInums; //stores inums of each dir entry for dfs recursion
 
-  for (int i = 0; i < DIRECT_PTRS; ++i) { //iterate over inode.direct
+  //FIXME: originally i < DIRECT_PTRS;
+  for (int i = 0; i < 1; ++i) { //iterate over inode.direct
     int blockNum = curInode.direct[i];
     if (blockNum == 0) { // no more directory entry arrays
       break; 
@@ -54,11 +55,21 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk) {
     
     //FIXME: potential issue?
     dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array
-    int numEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //# of dir entries
+    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
+    int numEntries = 0;
 
-    for (int i = 0; i < numEntries; ++i) { //iterate through each entry to get info
-      string dirName = dirEntries[i].name;
-      int dirInum = dirEntries[i].inum;
+    //find # of valid entries
+    for (int j = 0; j < maxPossibleEntries; ++j) {
+      if (dirEntries[j].inum != -1) {
+        numEntries++;
+      }else{
+        break;
+      }
+    }
+
+    for (int k = 0; k < numEntries; ++k) { //iterate through each entry to get info
+      string dirName = dirEntries[k].name;
+      int dirInum = dirEntries[k].inum;
 
       //push info into vector
       dirEntsInfo.push_back(make_pair(dirInum, dirName));
@@ -69,17 +80,16 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk) {
     for (const auto &dirEnt: dirEntsInfo) { //print each entry in curDir
       cout << dirEnt.first << "\t" << dirEnt.second << endl;
     }
-    cout << endl;
 
     //recurse
     int numInums = dirEntsInfo.size();
-    for (int i = 0; i < numInums; ++i) { // iterate over inums of all dir entries
+    for (int l = 0; l < numInums; ++l) { // iterate over inums of all dir entries
       //print the name of the directory you're about to recurse on before recursing?
       //possible that we can't get name of curDir, only child Dirs. ^ approach allows us to get name of dir we will be recursing on
       
       inode_t nextInode; 
-      int nextInodeNum = dirEntsInfo[i].first;
-      string nextDirName = dirEntsInfo[i].second;
+      int nextInodeNum = dirEntsInfo[l].first;
+      string nextDirName = dirEntsInfo[l].second;
       lfs.stat(nextInodeNum, &nextInode); //get inode referenced by inodeNumber
 
       //add extra check to make sure we only print/ recurse on dirs that aren't curDir or parentDir
@@ -88,7 +98,10 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk) {
       }else{ //recurse
         //TODO: print nextDir name, prepended by parentDirs/ fullpath
         //format: "Directory '`fullpath/curDirName`" (have a string containing parentDir names concatenated tgt)
-        DFS(nextInodeNum, lfs, disk); //recurse on inum of current dir entry
+        cout << endl;
+        string newFullPath = fullPath + nextDirName + "/";
+        cout << "Directory " << newFullPath << endl;
+        DFS(nextInodeNum, lfs, disk, newFullPath); //recurse on inum of current dir entry
       }
     }
 
@@ -107,7 +120,7 @@ int main(int argc, char *argv[]) {
   // Create LocalFileSystem object
   LocalFileSystem lfs(&disk);
 
-  DFS(0, lfs, disk); //DFS starting from the root dir (indicate by inode 0)
+  DFS(0, lfs, disk, "/"); //DFS starting from the root dir (indicate by inode 0)
 
   return 0;
 }

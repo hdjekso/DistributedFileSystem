@@ -47,6 +47,7 @@ int main(int argc, char *argv[]) {
     cout << static_cast<unsigned int>(inodeBitmapBuffer[i]) << " ";
   }
   cout << endl;
+  cout << endl;
 
   //data region bitmap
   cout << "Data bitmap" << endl;

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <cstring>
 #include <assert.h>
 
 #include "LocalFileSystem.h"
@@ -35,7 +36,7 @@ int LocalFileSystem::stat(int inodeNumber, inode_t *inode) {
     return -EINVALIDINODE; // invalid inode number
   }
 
-  inode_t* inodes = new inode_t[superBlock->num_inodes]; //create inode table
+  inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
   this->readInodeRegion(&superBlock, inodes); // populate inode table
 
   //copy contents into `inode` argument
@@ -50,7 +51,7 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {//create Dis
   super_t superBlock;
   this->readSuperBlock(&superBlock);
 
-  inode_t* inodes = new inode_t[superBlock->num_inodes]; //create inode table
+  inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
   this->readInodeRegion(&superBlock, inodes); // populate inode table
 
   inode_t inode = inodes[inodeNumber]; // get inode from inode table using inodeNumber
