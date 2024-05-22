@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "ostream": "cpp",
-        "iostream": "cpp"
-    }
+        "iostream": "cpp",
+        "vector": "cpp"
+    },
+    "workbench.colorTheme": "Monokai Pro"
 }

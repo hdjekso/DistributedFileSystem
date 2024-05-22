@@ -144,11 +144,11 @@ class LocalFileSystem {
   bool diskHasSpace(super_t *super, int numInodesNeeded, int numDataBytesNeeded, int numDataBlocksNeeded=0);
 
   // Helper functions, you should read/write the entire inode and bitmap regions
-  void readInodeBitmap(super_t *super, unsigned char *inodeBitmap);
+  void readInodeBitmap(super_t *super, unsigned char *inodeBitmap); //done
   void writeInodeBitmap(super_t *super, unsigned char *inodeBitmap);
-  void readDataBitmap(super_t *super, unsigned char *dataBitmap);
+  void readDataBitmap(super_t *super, unsigned char *dataBitmap); //done
   void writeDataBitmap(super_t *super, unsigned char *dataBitmap);
-  void readInodeRegion(super_t *super, inode_t *inodes);
+  void readInodeRegion(super_t *super, inode_t *inodes); //done
   void writeInodeRegion(super_t *super, inode_t *inodes);
 
   // Normally we'd mark this as private but we expose it so that you can access

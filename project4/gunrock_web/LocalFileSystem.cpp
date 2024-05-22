@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstring>
 #include <assert.h>
+#include <cmath>
 
 #include "LocalFileSystem.h"
 #include "ufs.h"
@@ -23,8 +24,58 @@ void LocalFileSystem::readSuperBlock(super_t *super) {
   memcpy(super, block, sizeof(super_t));
 }
 
+//assume lookup() only looks in immediate dirEntries in dir indicated by parentInodeNumber
 int LocalFileSystem::lookup(int parentInodeNumber, string name) {
-  return 0;
+  //get parent inode
+  inode_t parentInode;
+  int result = this->stat(parentInodeNumber, &parentInode); //stat() return -EINVALIDINODE if parentInode is invalid
+
+  //check if stat() returned inode invalid error code
+  if (result == -EINVALIDINODE) {
+    return -EINVALIDINODE;
+  }
+
+  if (parentInode.type != UFS_DIRECTORY) { //file parentInode is a file
+    return -ENOTFOUND; //assume file indicated by parentInode does not match `string name`
+  }
+
+  //FIXME: originally i < DIRECT_PTRS;
+  for (int i = 0; i < 1; ++i) { //iterate over inode.direct
+    int blockNum = parentInode.direct[i];
+    if (blockNum == 0) { // no more directory entry arrays
+      break; 
+    }
+
+    char block[UFS_BLOCK_SIZE];
+    disk->readBlock(blockNum, block); //read all dir entries, store in `block` buffer
+
+    //dir entries array
+    dir_ent_t* dirEntries;
+    
+    dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array
+    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
+    int numEntries = 0;
+
+    //find # of valid entries
+    for (int j = 0; j < maxPossibleEntries; ++j) {
+      if (dirEntries[j].inum != -1) {
+        numEntries++;
+      }else{
+        break;
+      }
+    }
+
+    for (int k = 0; k < numEntries; ++k) { //iterate through each entry to get info
+      string dirName = dirEntries[k].name;
+      int dirInum = dirEntries[k].inum;
+
+      if (dirName == name) { //file found, return its inode num
+        return dirInum;
+      }
+    }
+  }
+
+  return -ENOTFOUND;
 }
 
 int LocalFileSystem::stat(int inodeNumber, inode_t *inode) {
@@ -46,22 +97,29 @@ int LocalFileSystem::stat(int inodeNumber, inode_t *inode) {
   return 0;
 }
 
-int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {//create Disk object
+int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   
   super_t superBlock;
   this->readSuperBlock(&superBlock);
 
-  inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
+  /*inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
   this->readInodeRegion(&superBlock, inodes); // populate inode table
 
-  inode_t inode = inodes[inodeNumber]; // get inode from inode table using inodeNumber
+  inode_t inode = inodes[inodeNumber]; // get inode from inode table using inodeNumber*/
+  inode_t inode;
+  this->stat(inodeNumber, &inode); //get inode referenced by inodeNumber
+
+  int fileSize = inode.size;
+  if (size > fileSize) { // prevent reading after eof
+    size = fileSize;
+  }
+
   int fileBlockNum = 0; // used to access physical block #
   int blockNum = inode.direct[fileBlockNum]; //get physical block # using file block # (0)
 
   // Check if inodeNumber is valid
   if (inodeNumber < 0 || inodeNumber >= superBlock.num_inodes) {
-    // Free allocated memory
-    delete[] inodes;
+    //delete[] inodes;
     return -EINVALIDINODE; // Return error code for invalid inode number
   }
   /////////////////////////////////////
@@ -82,7 +140,7 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {//create Dis
     fileBlockNum++; 
   }
 
-  delete[] inodes;
+  //delete[] inodes;
   if (bytesRead != size) { //error checking
     cerr << "error with read(): incorrect number of bytes read; bytesRead: " << bytesRead << ", size: " << size << endl;
     return 1;
@@ -91,6 +149,53 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {//create Dis
 }
 
 int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
+  /*ERROR CHECKS*/
+  //check if parentInode exists
+  inode_t parentInode;
+  int result = this->stat(parentInodeNumber, &parentInode); //stat() returns -EINVALIDINODE if parentInode is invalid
+
+  //check if stat() returned -EINVALIDINODE
+  if (result == -EINVALIDINODE) {
+    return -EINVALIDINODE;
+  }
+
+  //if length name exceeds DIR_ENT_NAME_SIZE, return -EINVALIDNAME
+  if (name.length() >= DIR_ENT_NAME_SIZE) { //char[] is terminated by /0, 27 chars only
+    return -EINVALIDNAME;
+  }
+
+  //check if file/dir we are trying to create exists using inum = lookup(name)
+  //if it exists, check if type matches using stat(inum) and .type. return success (inum) or -EINVALIDTYPE depending
+  int newFileInum = this->lookup(parentInodeNumber, name);
+  if (newFileInum != -ENOTFOUND) { //file exists
+    //get inode info of newFile
+    inode_t newFileInode;
+    this->stat(newFileInum, &newFileInode);
+
+    //check if type matches argument
+    if (newFileInode.type == type) {
+      return newFileInum; //success
+    }else{
+      return -EINVALIDTYPE;
+    }
+  }
+  
+  //check if space exists in disk using diskHasSpace()
+  super_t superBlock;
+  this->readSuperBlock(&superBlock);
+  //assume new file only needs 1 block of space
+  if (!this->diskHasSpace(&superBlock, 1, UFS_BLOCK_SIZE, 0)) {
+    return -ENOTENOUGHSPACE;
+  }
+  /* ERROR CHECKS OVER*/
+  
+  //TODO: create file
+  //creating file/dir:
+  //assign inode_t info and block num to new file/dir
+  //assign dir_ent_t info to new file/dir
+  //update parentInode.direct[]
+  //update superBlock metadata
+  //update inode/ data bitmaps (num_inodes, num_data)
   return 0;
 }
 
@@ -121,4 +226,17 @@ void LocalFileSystem::readInodeRegion(super_t *super, inode_t *inodes) {
   }
   memcpy(inodes, inodeRegionBuffer, inodeRegionSize); //copy buffer contents into `inodes` array
   delete[] inodeRegionBuffer;
+}
+
+bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numDataBytesNeeded, int numDataBlocksNeeded=0) {
+  numDataBlocksNeeded += ceil(numDataBytesNeeded / UFS_BLOCK_SIZE);
+
+  //unallocated space for inodes = total space for inodes - total space of allocated inodes
+  int availInodesInBytes = (super->inode_region_len * UFS_BLOCK_SIZE - super->num_inodes * sizeof(inode_t)); 
+  int availDataBlocks = (super->data_region_len - super->num_data);
+
+  if (availInodesInBytes < (numInodesNeeded * sizeof(inode_t)) || availDataBlocks < numDataBlocksNeeded) {
+    return false;
+  }
+  return true;
 }

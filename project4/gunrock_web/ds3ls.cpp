@@ -32,12 +32,12 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk, string fullPath) {
   inode_t curInode; 
   lfs.stat(inodeNumber, &curInode); //get inode referenced by inodeNumber
 
-  //base case
+vector<pair<int, string>> dirEntsInfo;  //base case
   if (curInode.type != UFS_DIRECTORY) { //file reached
     return;
   }
 
-  vector<pair<int, string>> dirEntsInfo; //stores inum/ name pairs of each dir entry
+   //stores inum/ name pairs of each dir entry
   //vector<int> dirEntInums; //stores inums of each dir entry for dfs recursion
 
   //FIXME: originally i < DIRECT_PTRS;
@@ -53,7 +53,6 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk, string fullPath) {
     //dir entries array
     dir_ent_t* dirEntries;
     
-    //FIXME: potential issue?
     dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array
     int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
     int numEntries = 0;
@@ -106,7 +105,6 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk, string fullPath) {
     }
 
   }
-  //TODO: finish DFS()
 }
 
 int main(int argc, char *argv[]) {
