@@ -69,6 +69,9 @@ int main(int argc, char *argv[]) {
   //int* diskBlockNums = new int[numBlocks]; //array storing disk block #s
   for (int i = 0; i <= numBlocks; ++i) {
     //diskBlockNums[i] = inode.direct[i];
+    /*if (inode.direct[i] == 0) {
+      break;
+    }*/
     cout << inode.direct[i] << endl;
   }
   cout << endl;

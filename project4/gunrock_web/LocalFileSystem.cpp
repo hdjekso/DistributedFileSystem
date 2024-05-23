@@ -109,11 +109,6 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   inode_t inode;
   this->stat(inodeNumber, &inode); //get inode referenced by inodeNumber
 
-  int fileSize = inode.size;
-  if (size > fileSize) { // prevent reading after eof
-    size = fileSize;
-  }
-
   int fileBlockNum = 0; // used to access physical block #
   int blockNum = inode.direct[fileBlockNum]; //get physical block # using file block # (0)
 
@@ -121,6 +116,16 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   if (inodeNumber < 0 || inodeNumber >= superBlock.num_inodes) {
     //delete[] inodes;
     return -EINVALIDINODE; // Return error code for invalid inode number
+  }
+  //check if size is valid
+  if (size < 0) {
+    return -EINVALIDSIZE;
+  }
+
+  // prevent reading after eof
+  int fileSize = inode.size;
+  if (size > fileSize) { 
+    size = fileSize;
   }
   /////////////////////////////////////
   int bytesRemaining = size; //number of bytes still needed to fill up buffer
