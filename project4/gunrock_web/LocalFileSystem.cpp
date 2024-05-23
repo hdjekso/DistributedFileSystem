@@ -291,18 +291,59 @@ void LocalFileSystem::readInodeRegion(super_t *super, inode_t *inodes) {
 }
 
 
-//assume num_inodes stores the # of allocated inodes
+//num_inodes and num_data store the total # of inodes/ data blocks in disk (allocated/ not allocated)
 bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numDataBytesNeeded, int numDataBlocksNeeded=0) {
-  numDataBlocksNeeded += ceil(numDataBytesNeeded / UFS_BLOCK_SIZE);
+  numDataBlocksNeeded += (numDataBytesNeeded / UFS_BLOCK_SIZE);
+  if (numDataBytesNeeded % UFS_BLOCK_SIZE != 0) {
+    numDataBlocksNeeded++;
+  }
 
+  super_t superBlock;
+  this->readSuperBlock(&superBlock);
+
+  //create buffer to store inode bitmap
+  unsigned char inodeBitmapBuffer[superBlock.inode_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
+  int inodeBitmapSize = superBlock.inode_bitmap_len * UFS_BLOCK_SIZE; // in bytes
+  this->readInodeBitmap(&superBlock, inodeBitmapBuffer);
+
+  //count num free inodes
+  int freeInodeCount = 0;
+  for (int byteIdx = 0; byteIdx < inodeBitmapSize; ++byteIdx) {
+    for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
+      if ((inodeBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
+        freeInodeCount++; //free inode found
+      }
+    }
+  }
+
+  //create buffer to store data bitmap
+  unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
+  int dataBitmapSize = superBlock.data_bitmap_len * UFS_BLOCK_SIZE;
+  this->readDataBitmap(&superBlock, dataBitmapBuffer);
+
+  //count num free data blocks. each bit in bitmap represents a data block
+  int freeDataBlocksCount = 0;
+  for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
+    for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
+      if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
+        freeDataBlocksCount++; //free data block found
+      }
+    }
+  }
+
+  if (freeDataBlocksCount >= numDataBlocksNeeded && freeInodeCount >= numInodesNeeded) {
+    return true;
+  }else{
+    return false;
+  }
   //unallocated space for inodes = total space for inodes - total space of allocated inodes
-  int availInodesInBytes = (super->inode_region_len * UFS_BLOCK_SIZE - super->num_inodes * sizeof(inode_t)); 
+  /*int availInodesInBytes = (super->inode_region_len * UFS_BLOCK_SIZE - super->num_inodes * sizeof(inode_t)); 
   int availDataBlocks = (super->data_region_len - super->num_data);
 
   if (availInodesInBytes < (numInodesNeeded * sizeof(inode_t)) || availDataBlocks < numDataBlocksNeeded) {
     return false;
   }
-  return true;
+  return true;*/
 }
 
 //take `inodeBitMap` and write it to disk
