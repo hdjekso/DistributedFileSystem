@@ -39,7 +39,8 @@ int LocalFileSystem::lookup(int parentInodeNumber, string name) {
     return -ENOTFOUND; //assume file indicated by parentInode does not match `string name`
   }
 
-  //FIXME: originally i < DIRECT_PTRS;
+  //read first block of dirEntries, and count total # of valid (allocated) dirEntries reference by parentInodeNumber
+  //originally i < DIRECT_PTRS;
   for (int i = 0; i < 1; ++i) { //iterate over inode.direct
     int blockNum = parentInode.direct[i];
     if (blockNum == 0) { // no more directory entry arrays
@@ -228,9 +229,6 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       return -ENOTENOUGHSPACE;
   }
 
-  //find free data block # using data bitmap
-  int freeBlockNum = 0;
-
   //create buffer to store data bitmap
   unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
   int dataBitmapSize = superBlock.data_bitmap_len * UFS_BLOCK_SIZE;
@@ -249,7 +247,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   }
   this->writeDataBitmap(&superBlock, dataBitmapBuffer); //update data bitmap in disk
   //bonus error check
-  if (freeBlockNum == 0) { // No free block num found
+  if (freeBlockNum == -1) { // No free block num found
       return -ENOTENOUGHSPACE;
   }
 
@@ -312,10 +310,45 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     }    
   }
 
+  //TODO: update parentInode.direct[] (add new directory entry to parentInode - the new file/dir)
 
-  //update parentInode.direct[]
+  //find first unallocated dir entry in parentInode, add new file/dir's blockNum to it
+  bool parentInodeUpdated = false;
+  for (int i = 0; i < DIRECT_PTRS; ++i) { //iterate over inode.direct
+    int curBlockNum = parentInode.direct[i];
 
-  //update inode/ data bitmaps (num_inodes, num_data)
+    //FIXME: potentially need to allocate new block to store new file/ dir
+    /*if (blockNum == 0) { // no more directory entry arrays
+      break; 
+    }*/
+
+    char block[UFS_BLOCK_SIZE];
+    disk->readBlock(curBlockNum, block); //read all dir entries, store in `block` buffer
+
+    //dir entries array
+    dir_ent_t* dirEntries;
+    
+    dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array
+    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
+    int numEntries = 0;
+
+    //find 1st unallocated dir entry in current block
+    for (int j = 0; j < maxPossibleEntries; ++j) {
+      if (dirEntries[j].inum == -1) { //unallocated dir entry found, allocate it (assign new file/ dir info to it)
+        dirEntries[j].inum = freeInodeNum;
+        strcpy(dirEntries[j].name, name.c_str());
+        disk->writeBlock(curBlockNum, block);
+        parentInodeUpdated = true;
+        break;
+      }
+    }
+    if (parentInodeUpdated) {
+      break;
+    }
+  }
+
+
+
   return 0;
 }
 
