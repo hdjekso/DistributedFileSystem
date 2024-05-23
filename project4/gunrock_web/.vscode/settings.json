@@ -2,7 +2,9 @@
     "files.associations": {
         "ostream": "cpp",
         "iostream": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "memory": "cpp",
+        "string": "cpp"
     },
     "workbench.colorTheme": "Monokai Pro"
 }

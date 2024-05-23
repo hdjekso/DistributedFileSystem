@@ -191,9 +191,71 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   
   //TODO: create file
   //creating file/dir:
-  //assign inode_t info and block num to new file/dir
-  //assign dir_ent_t info to new file/dir
+  //assign inode_t type
+  inode_t createFileInode;
+  createFileInode.type = type;
+
+  //assign inode_t size
+  if (type == UFS_REGULAR_FILE) {
+    createFileInode.size = 0;
+  }else{ //directory
+    //TODO: assign .size value to inode
+  }
+
+
+  //assign inode number for newFile
+  /*Steps to Assign an Inode Number
+  -Read the Inode Bitmap: Load the inode bitmap from the disk to find a free inode. DONE
+  -Find a Free Inode: Scan the inode bitmap to find the first free (unused) inode. DONE
+  -Mark the Inode as Used: Update the inode bitmap to mark the found inode as used. DONE
+  -Initialize the Inode: Initialize the inode structure in the inode table with the necessary metadata.
+  -Write Back Changes: Write the modified inode bitmap and inode table back to the disk.*/
+
+  //create buffer to store inode bitmap
+  unsigned char inodeBitmapBuffer[superBlock.inode_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
+  int inodeBitmapSize = superBlock.inode_bitmap_len * UFS_BLOCK_SIZE;
+  this->readInodeBitmap(&superBlock, inodeBitmapBuffer);
+
+  //find free inode num in bitmap
+  //each bit represents one inode
+  int freeInodeNum = -1;
+  for (int byteIdx = 0; byteIdx < (superBlock.inode_bitmap_len * UFS_BLOCK_SIZE); ++byteIdx) {
+    for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
+      if ((inodeBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
+        freeInodeNum = byteIdx * 8 + bitIdx; //free inode num found
+        inodeBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the inode as used (set bit to 1)
+        break;
+      }
+    }
+  }
+  //bonus error check
+  if (freeInodeNum == -1) { // No free inode found
+      delete[] inodeBitmapBuffer;
+      return -ENOTENOUGHSPACE;
+  }
+
+  //asign block num to new file/dir and update data region
+
+  //assign initial directory entries if type = dir (dir_ent_t)
+  if (type == UFS_DIRECTORY) {
+    dir_ent_t curNewDir; //current directory we are trying to create
+    strcpy(curNewDir.name, "."); 
+    curNewDir.inum = freeInodeNum;
+    dir_ent_t newDirParent; //parent of the new dir we are trying to create
+    strcpy(newDirParent.name, ".."); 
+    newDirParent.inum = parentInodeNumber;
+
+    //FIXME
+    for (int i = 0; i < DIRECT_PTRS; ++i) { //iterate through directory entries of createFileInode to find unallocated block #'s
+      unsigned int curBlockNum = createFileInode.direct[i];
+      char block[UFS_BLOCK_SIZE];
+      disk->readBlock(curBlockNum, block); //read all dir entries, store in `block` buffer
+    }    
+  }
+
+
   //update parentInode.direct[]
+
   //update superBlock metadata
   //update inode/ data bitmaps (num_inodes, num_data)
   return 0;
@@ -228,6 +290,8 @@ void LocalFileSystem::readInodeRegion(super_t *super, inode_t *inodes) {
   delete[] inodeRegionBuffer;
 }
 
+
+//assume num_inodes stores the # of allocated inodes
 bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numDataBytesNeeded, int numDataBlocksNeeded=0) {
   numDataBlocksNeeded += ceil(numDataBytesNeeded / UFS_BLOCK_SIZE);
 
@@ -240,3 +304,32 @@ bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numD
   }
   return true;
 }
+
+//take `inodeBitMap` and write it to disk
+void LocalFileSystem::writeInodeBitmap(super_t *super, unsigned char *inodeBitmap) {
+  //int inodeBitmapSize = super->inode_bitmap_len * UFS_BLOCK_SIZE;
+
+  //iterate through every block of the inode bitmap in disk
+  for (int i = 0; i < super->inode_bitmap_len; ++i) {
+    //write each block from `inodeBitmap` to inode bitmap in disk using offset i
+    disk->writeBlock(super->inode_bitmap_addr + i,  inodeBitmap + (i * UFS_BLOCK_SIZE));
+  }
+}
+
+//same implementation as above
+void LocalFileSystem::writeDataBitmap(super_t *super, unsigned char *dataBitmap) {
+  //iterate through every block of the data bitmap in disk
+  for (int i = 0; i < super->data_bitmap_len; ++i) {
+    //write each block from `dataBitmap` to data bitmap in disk using offset i
+    disk->writeBlock(super->data_bitmap_addr + i,  dataBitmap + (i * UFS_BLOCK_SIZE));
+  } 
+}
+
+//use content stored in `inodes` and write to inode region in disk
+void LocalFileSystem::writeInodeRegion(super_t *super, inode_t *inodes) {
+  for (int i = 0; i < super->inode_region_len; ++i) {
+    disk->writeBlock(super->inode_region_addr + i, inodes + (i * UFS_BLOCK_SIZE));
+  }
+}
+
+
