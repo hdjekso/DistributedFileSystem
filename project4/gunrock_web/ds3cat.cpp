@@ -78,9 +78,10 @@ int main(int argc, char *argv[]) {
 
   //print file contents
   cout << "File data" << endl;
-  for (int i = 0; i < fileSize; ++i) {
+  cout << buffer;
+  /*for (int i = 0; i < fileSize; ++i) {
     cout << buffer[i];
-  }
+  }*/
   //cout << endl;
 
   //delete[] inodes;

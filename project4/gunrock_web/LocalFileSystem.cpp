@@ -228,11 +228,32 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       return -ENOTENOUGHSPACE;
   }
 
-  //TODO: find free data block # using data bitmap
+  //find free data block # using data bitmap
   int freeBlockNum = 0;
 
-  //assign inode parameters (type, size, .direct[])
+  //create buffer to store data bitmap
+  unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
+  int dataBitmapSize = superBlock.data_bitmap_len * UFS_BLOCK_SIZE;
+  this->readDataBitmap(&superBlock, dataBitmapBuffer);
 
+  //find free block num in bitmap. each bit represents one data block
+  int freeBlockNum = -1;
+  for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
+    for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
+      if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
+        freeBlockNum = byteIdx * 8 + bitIdx; //free block num found
+        dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
+        break;
+      }
+    }
+  }
+  this->writeDataBitmap(&superBlock, dataBitmapBuffer); //update data bitmap in disk
+  //bonus error check
+  if (freeBlockNum == 0) { // No free block num found
+      return -ENOTENOUGHSPACE;
+  }
+
+  //assign inode parameters (type, size, .direct[]) for free inode
   //read in entire inode table
   inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
   this->readInodeRegion(&superBlock, inodes); // populate inode table
@@ -258,7 +279,6 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     bool curDirAssigned = false;
     bool parentDirAssigned = false;
     //assign block number to .direct[i], where .direct[i] currently = 0
-    //freeBlockNum; //FIXME: freeBlockNum (find freeBlockNum (i.e. free data block) using data bitmap)
     char block[UFS_BLOCK_SIZE];
     disk->readBlock(freeBlockNum, block); //read contents of free data block, store in `block` buffer
 
