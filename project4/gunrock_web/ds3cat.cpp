@@ -80,8 +80,6 @@ int main(int argc, char *argv[]) {
   }
   cout << endl;
 
-
-
   //delete[] inodes;
   delete[] buffer;
   //delete[] diskBlockNums;
