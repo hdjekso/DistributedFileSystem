@@ -119,6 +119,7 @@ int main(int argc, char *argv[]) {
   LocalFileSystem lfs(&disk);
 
   DFS(0, lfs, disk, "/"); //DFS starting from the root dir (indicate by inode 0)
+  cout << endl;
 
   return 0;
 }

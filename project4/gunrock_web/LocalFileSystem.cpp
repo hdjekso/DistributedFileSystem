@@ -253,7 +253,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     bool curDirAssigned = false;
     bool parentDirAssigned = false;
     //assign block number to .direct[i], where .direct[i] currently = 0
-    freeBlockNum; //FIXME: freeBlockNum (find freeBlockNum (i.e. free data block) using data bitmap)
+    //freeBlockNum; //FIXME: freeBlockNum (find freeBlockNum (i.e. free data block) using data bitmap)
     char block[UFS_BLOCK_SIZE];
     disk->readBlock(freeBlockNum, block); //read contents of free data block, store in `block` buffer
 
