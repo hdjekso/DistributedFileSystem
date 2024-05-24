@@ -394,10 +394,18 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
 }
 
 int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
+  //modifying parent info needed: .size is determined by size of all its dir entries
+  //will writeBlock() automatically write all contents into each dir_ent_t?
   return 0;
 }
 
 int LocalFileSystem::unlink(int parentInodeNumber, string name) {
+  //error checks
+  //dir not empty -> dir to be removed has subdirectories/ files within
+
+  //get inode number of file using lookup()
+  //empty inode contents of file
+  //find dir entry containing the file within a block in parentInode's .direct[] array. remove dir entry within block
   return 0;
 }
 
