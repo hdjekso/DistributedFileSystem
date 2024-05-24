@@ -32,7 +32,8 @@ void DFS(int inodeNumber, LocalFileSystem &lfs, Disk &disk, string fullPath) {
   inode_t curInode; 
   lfs.stat(inodeNumber, &curInode); //get inode referenced by inodeNumber
 
-vector<pair<int, string>> dirEntsInfo;  //base case
+  vector<pair<int, string>> dirEntsInfo;
+  //base case
   if (curInode.type != UFS_DIRECTORY) { //file reached
     return;
   }
@@ -40,8 +41,16 @@ vector<pair<int, string>> dirEntsInfo;  //base case
    //stores inum/ name pairs of each dir entry
   //vector<int> dirEntInums; //stores inums of each dir entry for dfs recursion
 
-  //FIXME: originally i < DIRECT_PTRS;
-  for (int i = 0; i < 1; ++i) { //iterate over inode.direct
+  int activeBlocks = curInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  if (curInode.size % UFS_BLOCK_SIZE != 0) {
+    activeBlocks++;
+  }
+  int numDirEntries = curInode.size / sizeof(dir_ent_t); //remaining entries that need to be read
+
+  for (int i = 0; i < activeBlocks; ++i) { //iterate over all allocated blocks inode.direct,store all directory entries in dirEntsInfo
+    if (numDirEntries == 0) {
+      break;
+    }
     int blockNum = curInode.direct[i];
     if (blockNum == 0) { // no more directory entry arrays
       break; 
@@ -55,7 +64,7 @@ vector<pair<int, string>> dirEntsInfo;  //base case
     
     dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array
     int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
-    int numEntries = 0;
+    /*int numEntries = 0;
 
     //find # of valid entries
     for (int j = 0; j < maxPossibleEntries; ++j) {
@@ -64,46 +73,45 @@ vector<pair<int, string>> dirEntsInfo;  //base case
       }else{
         break;
       }
-    }
+    }*/
 
-    for (int k = 0; k < numEntries; ++k) { //iterate through each entry to get info
+    for (int k = 0; k < min(maxPossibleEntries, numDirEntries); ++k) { //iterate through each entry to get info
       string dirName = dirEntries[k].name;
       int dirInum = dirEntries[k].inum;
 
       //push info into vector
       dirEntsInfo.push_back(make_pair(dirInum, dirName));
     }
+    numDirEntries -= min(maxPossibleEntries, numDirEntries);
+  }
+  //sort dirEntsInfo vector using strcmp BASED ON DIRNAME, then print
+  sort(dirEntsInfo.begin(), dirEntsInfo.end(), comparePairs);
+  for (const auto &dirEnt: dirEntsInfo) { //print each entry in curDir
+    cout << dirEnt.first << "\t" << dirEnt.second << endl;
+  }
 
-    //sort dirEntsInfo vector using strcmp BASED ON DIRNAME, then print
-    sort(dirEntsInfo.begin(), dirEntsInfo.end(), comparePairs);
-    for (const auto &dirEnt: dirEntsInfo) { //print each entry in curDir
-      cout << dirEnt.first << "\t" << dirEnt.second << endl;
+  //recurse
+  int numInums = dirEntsInfo.size();
+  for (int l = 0; l < numInums; ++l) { // iterate over inums of all dir entries
+    //print the name of the directory you're about to recurse on before recursing?
+    //possible that we can't get name of curDir, only child Dirs. ^ approach allows us to get name of dir we will be recursing on
+    
+    inode_t nextInode; 
+    int nextInodeNum = dirEntsInfo[l].first;
+    string nextDirName = dirEntsInfo[l].second;
+    lfs.stat(nextInodeNum, &nextInode); //get inode referenced by inodeNumber
+
+    //add extra check to make sure we only print/ recurse on dirs that aren't curDir or parentDir
+    if (nextInode.type != UFS_DIRECTORY || nextDirName == "." || nextDirName == "..") { //next inode is a file OR is curDir/ parentDir
+      continue;
+    }else { //recurse
+      //TODO: print nextDir name, prepended by parentDirs/ fullpath
+      //format: "Directory '`fullpath/curDirName`" (have a string containing parentDir names concatenated tgt)
+      cout << endl;
+      string newFullPath = fullPath + nextDirName + "/";
+      cout << "Directory " << newFullPath << endl;
+      DFS(nextInodeNum, lfs, disk, newFullPath); //recurse on inum of current dir entry
     }
-
-    //recurse
-    int numInums = dirEntsInfo.size();
-    for (int l = 0; l < numInums; ++l) { // iterate over inums of all dir entries
-      //print the name of the directory you're about to recurse on before recursing?
-      //possible that we can't get name of curDir, only child Dirs. ^ approach allows us to get name of dir we will be recursing on
-      
-      inode_t nextInode; 
-      int nextInodeNum = dirEntsInfo[l].first;
-      string nextDirName = dirEntsInfo[l].second;
-      lfs.stat(nextInodeNum, &nextInode); //get inode referenced by inodeNumber
-
-      //add extra check to make sure we only print/ recurse on dirs that aren't curDir or parentDir
-      if (nextInode.type != UFS_DIRECTORY || nextDirName == "." || nextDirName == "..") { //next inode is a file OR is curDir/ parentDir
-        continue;
-      }else{ //recurse
-        //TODO: print nextDir name, prepended by parentDirs/ fullpath
-        //format: "Directory '`fullpath/curDirName`" (have a string containing parentDir names concatenated tgt)
-        cout << endl;
-        string newFullPath = fullPath + nextDirName + "/";
-        cout << "Directory " << newFullPath << endl;
-        DFS(nextInodeNum, lfs, disk, newFullPath); //recurse on inum of current dir entry
-      }
-    }
-
   }
 }
 

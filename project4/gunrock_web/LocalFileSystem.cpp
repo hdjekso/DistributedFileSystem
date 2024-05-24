@@ -10,7 +10,6 @@
 
 using namespace std;
 
-
 LocalFileSystem::LocalFileSystem(Disk *disk) {
   this->disk = disk;
 }
@@ -99,6 +98,7 @@ int LocalFileSystem::stat(int inodeNumber, inode_t *inode) {
 }
 
 int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
+  bool invalidSize = false;
   
   super_t superBlock;
   this->readSuperBlock(&superBlock);
@@ -126,6 +126,7 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   // prevent reading after eof
   int fileSize = inode.size;
   if (size > fileSize) { 
+    invalidSize = true;
     size = fileSize;
   }
   /////////////////////////////////////
@@ -150,6 +151,9 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   if (bytesRead != size) { //error checking
     cerr << "error with read(): incorrect number of bytes read; bytesRead: " << bytesRead << ", size: " << size << endl;
     return 1;
+  }
+  if (invalidSize) {
+    return -EINVALIDSIZE;
   }
   return size;
 }
@@ -195,10 +199,11 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   }
   /* ERROR CHECKS OVER*/
   
-  //TODO: create file
-  //FIXME: ensure writes are called in order(refer to write() table)
-  //creating file/dir:
+  //create file
+  //creating file/dir: assign newFile inode -> assign newFile data -> update parent data -> update parent Inode -> update inode bitmap -> update data bitmap
 
+  //PART 1: find free inode #, update inode bitmap
+  ////////////////////////////////////////////////////////////
   //assign inode number for newFile
   /*Steps to Assign an Inode Number
   -Read the Inode Bitmap: Load the inode bitmap from the disk to find a free inode. DONE
@@ -229,6 +234,8 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       return -ENOTENOUGHSPACE;
   }
 
+  //PART 2: find free block # within inode, update data bitmap
+  //////////////////////////////////////////////////////////////////
   //create buffer to store data bitmap
   unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
   int dataBitmapSize = superBlock.data_bitmap_len * UFS_BLOCK_SIZE;
@@ -241,7 +248,6 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
         freeBlockNum = byteIdx * 8 + bitIdx; //free block num found
         dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
-        break;
       }
     }
   }
@@ -251,17 +257,20 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       return -ENOTENOUGHSPACE;
   }
 
-  //assign inode parameters (type, size, .direct[]) for free inode
+  //PART 3: assign newFile parameters  (type, size, .direct[]) to the free inode
+  /////////////////////////////////////////////////////////////////////////
   //read in entire inode table
   inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
   this->readInodeRegion(&superBlock, inodes); // populate inode table
 
   inode_t& createFileInode = inodes[freeInodeNum]; //get the inode we want to update (reference: updating `createFileInode` updates `inodes` as well)
+  inode_t& newFileParentInode = inodes[parentInodeNumber]; // create another instance of parent inode, this time as a reference to `inodes`
 
   //assign inode_t type
   createFileInode.type = type;
   //assign inode_t .direct[]
-  createFileInode.direct[0] = freeBlockNum;
+  memset(createFileInode.direct, 0, sizeof(createFileInode.direct)); //initialize all elements inside .direct[] to 0
+  createFileInode.direct[0] = unsigned(freeBlockNum);
   //assign inode_t size
   if (type == UFS_REGULAR_FILE) {
     createFileInode.size = 0;
@@ -271,23 +280,32 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   }
   this->writeInodeRegion(&superBlock, inodes); //write inode table changes to disk
 
+  //PART 4: write contents of newFile to data region
+  //////////////////////////////////////////////////////////////////////////////////
+  char block[UFS_BLOCK_SIZE];
+  disk->readBlock(freeBlockNum, block); //read contents of free data block, store in `block` buffer
+
+  //dir entries array. 
+  dir_ent_t* dirEntries;
+  dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array. modifying dirEntries modifies `block` as well
+  int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
   //assign initial directory entries if type = dir (dir_ent_t) (i.e. update createNewInode.direct[])
   if (type == UFS_DIRECTORY) {
 
-    bool curDirAssigned = false;
-    bool parentDirAssigned = false;
+    //bool curDirAssigned = false;
+    //bool parentDirAssigned = false;
     //assign block number to .direct[i], where .direct[i] currently = 0
-    char block[UFS_BLOCK_SIZE];
-    disk->readBlock(freeBlockNum, block); //read contents of free data block, store in `block` buffer
 
-    //dir entries array. 
-    dir_ent_t* dirEntries;
-    dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array. modifying dirEntries modifies `block` as well
-    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
+    //update free data block (a data block within data region): find first 2 unallocated dir entries within free data block (assume it to be [0] and [1]) and update them. set all other dir entries to 'unalloacted'
+    strcpy(dirEntries[0].name, "."); 
+    dirEntries[0].inum = freeInodeNum;
+    strcpy(dirEntries[1].name, "..");
+    dirEntries[1].inum = parentInodeNumber;
+    for (int i = 2; i < maxPossibleEntries; ++i) { //set remaining dir entries to 'unallocated'
+      dirEntries[i].inum = -1;
+    }
 
-    //update free data block (a data block within data region): find 2 unallocated dir entries within free data block (technically all of them should be unallocated) and update them
-    //FIXME: potential issue where there is space for curDir entry but not parentDir entry (unlikely, free data block should initially be empty)
-    for (int j = 0; j < maxPossibleEntries; ++j) {
+    /*for (int j = 0; j < maxPossibleEntries; ++j) {
       if (dirEntries[j].inum == -1) { // free (unallocated) dir entry found
         if (!curDirAssigned) {
           strcpy(dirEntries[j].name, "."); 
@@ -307,20 +325,39 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     if (!curDirAssigned || !parentDirAssigned) { // error checking
       cerr << "unable to update contents of free data block" << endl;
       return 1;
-    }    
+    }*/    
+  }else { //filetype = file
+    for (int i = 0; i < maxPossibleEntries; ++i) { //set all dir entries to 'unallocated'
+      dirEntries[i].inum = -1;
+    }
   }
+  disk->writeBlock(freeBlockNum, block); //write changes to block to data region
 
-  //TODO: update parentInode.direct[] (add new directory entry to parentInode - the new file/dir)
-
+  //PART 5: update parent data: update parent Inode to contain new File as a dir entry within a block in .direct[]
+  //////////////////////////////////////////////////////////////////////////////////////////////
   //find first unallocated dir entry in parentInode, add new file/dir's blockNum to it
   bool parentInodeUpdated = false;
   for (int i = 0; i < DIRECT_PTRS; ++i) { //iterate over inode.direct
-    int curBlockNum = parentInode.direct[i];
+    int curBlockNum = newFileParentInode.direct[i];
 
-    //FIXME: potentially need to allocate new block to store new file/ dir
-    /*if (blockNum == 0) { // no more directory entry arrays
-      break; 
-    }*/
+    //allocate new block to parent inode store new file/ dir
+    if (curBlockNum == 0) { // no more directory entry arrays
+      this->readDataBitmap(&superBlock, dataBitmapBuffer); //make sure dataBitmapBuffer is up to date
+      int parentFreeBlockNum = -1;
+      for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
+        for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
+          if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
+            parentFreeBlockNum = byteIdx * 8 + bitIdx; //free block num found
+            dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
+          }
+        }
+      }
+      if (parentFreeBlockNum == -1) { // No free block num found
+        return -ENOTENOUGHSPACE;
+      }
+      newFileParentInode.direct[i] = parentFreeBlockNum; //assign new block num to element in .direct[]
+      writeInodeRegion(&superBlock, inodes); //write updated inode info to inode region
+    }
 
     char block[UFS_BLOCK_SIZE];
     disk->readBlock(curBlockNum, block); //read all dir entries, store in `block` buffer
@@ -330,7 +367,6 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     
     dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array
     int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
-    int numEntries = 0;
 
     //find 1st unallocated dir entry in current block
     for (int j = 0; j < maxPossibleEntries; ++j) {
@@ -347,8 +383,13 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     }
   }
 
+  //PART 6: update parent inode parameter(s)
+  //////////////////////////////////////////////////////////////////////////////////////////////
+  //update newFileParentInode's .size parameter
+  newFileParentInode.size += sizeof(dir_ent_t);
+  writeInodeRegion(&superBlock, inodes);
 
-
+  delete[] inodes;
   return 0;
 }
 
@@ -455,5 +496,3 @@ void LocalFileSystem::writeInodeRegion(super_t *super, inode_t *inodes) {
     disk->writeBlock(super->inode_region_addr + i, inodes + (i * UFS_BLOCK_SIZE));
   }
 }
-
-

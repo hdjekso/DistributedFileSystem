@@ -1,10 +1,12 @@
 {
     "files.associations": {
+        "*.ejs": "html",
         "ostream": "cpp",
         "iostream": "cpp",
         "vector": "cpp",
         "memory": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "xstring": "cpp"
     },
     "workbench.colorTheme": "Monokai Pro"
 }
