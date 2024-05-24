@@ -396,6 +396,35 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
 int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
   //modifying parent info needed: .size is determined by size of all its dir entries
   //will writeBlock() automatically write all contents into each dir_ent_t?
+
+  /*ERROR CHECKS*/
+
+  //check if inode exists
+  inode_t curInode;
+  int result = this->stat(inodeNumber, &curInode); //stat() returns -EINVALIDINODE if parentInode is invalid
+
+  //check if stat() returned -EINVALIDINODE
+  if (result == -EINVALIDINODE) {
+    return -EINVALIDINODE;
+  }
+
+  //size check
+  if (size < 0) {
+    return -EINVALIDSIZE;
+  }
+
+  //type check
+  if (curInode.type != UFS_REGULAR_FILE) {
+    return -EINVALIDTYPE;
+  }
+
+  //storage check
+  super_t superBlock;
+  this->readSuperBlock(&superBlock);
+  if (!this->diskHasSpace(&superBlock, 1, size, 0)) {
+    return -ENOTENOUGHSPACE;
+  }
+
   return 0;
 }
 
