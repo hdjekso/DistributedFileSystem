@@ -6,7 +6,12 @@
         "vector": "cpp",
         "memory": "cpp",
         "string": "cpp",
-        "xstring": "cpp"
+        "xstring": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "utility": "cpp"
     },
     "workbench.colorTheme": "Monokai Pro"
 }

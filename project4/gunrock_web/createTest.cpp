@@ -41,6 +41,11 @@ int main(int argc, char *argv[]) {
   //create file/dir
   lfs.create(inum, filetype, filename);
 
+  for (int i = 0; i < 100; ++i) { //create 100 files/directories
+    string newfilename = filename + to_string(i);
+    lfs.create(inum, filetype, newfilename);
+  }
+
   //create file
   /*string fileName = "testFile.txt";
   lfs.create(0, UFS_REGULAR_FILE, fileName);*/
