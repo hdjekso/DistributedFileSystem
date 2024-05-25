@@ -28,28 +28,6 @@ int main(int argc, char *argv[]) {
   // create LocalFileSystem object
   LocalFileSystem lfs(&disk);
 
-  //////////////////////////////////// CODE BELOW ACHIEVED BY STAT()
-  /*// Read super block
-  super_t superBlock;
-  lfs.readSuperBlock(&superBlock);
-
-  // Allocate memory for inodes array
-  inode_t *inodes = new inode_t[superBlock.num_inodes];
-
-  // Populate inode table
-  lfs.readInodeRegion(&superBlock, inodes);
-
-  // Check if inodeNumber is valid
-  if (inodeNumber < 0 || inodeNumber >= superBlock.num_inodes) {
-      // Free allocated memory
-      delete[] inodes;
-      return -EINVALIDINODE; // Return error code for invalid inode number
-  }
-
-  // Get inode from inode table using inodeNumber
-  inode_t inode = inodes[inodeNumber];*/
-  /////////////////////////////////////////////////////////////////////
-
   inode_t inode; 
   lfs.stat(inodeNumber, &inode); //get inode referenced by inodeNumber
 

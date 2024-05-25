@@ -212,14 +212,19 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   this->readInodeBitmap(&superBlock, inodeBitmapBuffer);
 
   //find free inode num in bitmap. each bit represents one inode
+  bool freeInodeFound = false;
   int freeInodeNum = -1;
   for (int byteIdx = 0; byteIdx < inodeBitmapSize; ++byteIdx) {
     for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
       if ((inodeBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
         freeInodeNum = byteIdx * 8 + bitIdx; //free inode num found
         inodeBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the inode as used (set bit to 1)
+        freeInodeFound = true;
         break;
       }
+    }
+    if (freeInodeFound) {
+      break;
     }
   }
   this->writeInodeBitmap(&superBlock, inodeBitmapBuffer); //update inode bitmap in disk
@@ -238,13 +243,19 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   this->readDataBitmap(&superBlock, dataBitmapBuffer);
   if (type == UFS_DIRECTORY) {
     //find free block num in bitmap. each bit represents one data block
-    
+    bool freeBlockNumFound = false;
     for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
       for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
         if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-          freeBlockNum = byteIdx * 8 + bitIdx; //free block num found
+          //FIXME: assume block numbers are indexed starting from 4
+          freeBlockNum = (byteIdx * 8 + bitIdx) + 4; //free block num found
           dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
+          freeBlockNumFound = true;
+          break;
         }
+      }
+      if (freeBlockNumFound) {
+        break;
       }
     }
     this->writeDataBitmap(&superBlock, dataBitmapBuffer); //update data bitmap in disk
@@ -266,7 +277,8 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   //assign inode_t type
   createFileInode.type = type;
   //assign inode_t .direct[]
-  memset(createFileInode.direct, 0, sizeof(createFileInode.direct)); //initialize all elements inside .direct[] to 0
+  //FIXME: potential issue with memset
+  //memset(createFileInode.direct, 0, sizeof(createFileInode.direct)); //initialize all elements inside .direct[] to 0
   if (type == UFS_DIRECTORY) {
     createFileInode.direct[0] = unsigned(freeBlockNum);
   }
@@ -316,19 +328,27 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     if (curBlockNum == 0) { // no more directory entry arrays
       this->readDataBitmap(&superBlock, dataBitmapBuffer); //make sure dataBitmapBuffer is up to date
       int parentFreeBlockNum = -1;
+      bool parentFreeBlockNumFound = false;
       for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
         for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
           if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-            parentFreeBlockNum = byteIdx * 8 + bitIdx; //free block num found
+            //FIXME: assume block numbers are indexed starting from 4
+            parentFreeBlockNum = (byteIdx * 8 + bitIdx) +4 ; //free block num found
             dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
+            parentFreeBlockNumFound = true;
+            break;
           }
+        }
+        if (parentFreeBlockNumFound) {
+          break;
         }
       }
       if (parentFreeBlockNum == -1) { // No free block num found
         return -ENOTENOUGHSPACE;
       }
+      this->writeDataBitmap(&superBlock, dataBitmapBuffer); //update data bitmap in disk
       newFileParentInode.direct[i] = parentFreeBlockNum; //assign new block num to element in .direct[]
-      writeInodeRegion(&superBlock, inodes); //write updated inode info to inode region
+      this->writeInodeRegion(&superBlock, inodes); //write updated inode info to inode region
     }
 
     char parentBlock[UFS_BLOCK_SIZE];
@@ -357,7 +377,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   //////////////////////////////////////////////////////////////////////////////////////////////
   //update newFileParentInode's .size parameter
   newFileParentInode.size += sizeof(dir_ent_t);
-  writeInodeRegion(&superBlock, inodes);
+  this->writeInodeRegion(&superBlock, inodes);
 
   delete[] inodes;
   return 0;

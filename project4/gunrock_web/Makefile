@@ -1,4 +1,4 @@
-all: gunrock_web mkfs ds3ls ds3cat ds3bits
+all: gunrock_web mkfs ds3ls ds3cat ds3bits createTest
 
 CC = g++
 CFLAGS = -g -Werror -Wall -I include -I shared/include -I/usr/local/opt/openssl@1.1/include -I/opt/homebrew/Cellar/openssl@3/3.2.1/include
@@ -26,6 +26,9 @@ ds3cat: ds3cat.o $(DSUTIL_OBJS)
 ds3bits: ds3bits.o $(DSUTIL_OBJS)
 	$(CC) -o $@ $(CFLAGS) ds3bits.o $(DSUTIL_OBJS)
 
+createTest: createTest.o $(DSUTIL_OBJS)
+	$(CC) -o $@ $(CFLAGS) createTest.o $(DSUTIL_OBJS)
+
 %.d: %.c
 	@set -e; gcc -MM $(CFLAGS) $< \
 		| sed 's/\($*\)\.o[ :]*/\1.o $@ : /g' > $@;
@@ -43,4 +46,4 @@ ds3bits: ds3bits.o $(DSUTIL_OBJS)
 	gcc $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f gunrock_web mkfs ds3ls ds3cat ds3bits *.o *~ core.* *.d
+	rm -f gunrock_web mkfs ds3ls ds3cat ds3bits createTest *.o *~ core.* *.d
