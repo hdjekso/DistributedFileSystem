@@ -233,11 +233,10 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   //create buffer to store data bitmap
   int freeBlockNum = -1;
 
-  if (type = UFS_DIRECTORY) {
-    unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
-    int dataBitmapSize = superBlock.data_bitmap_len * UFS_BLOCK_SIZE;
-    this->readDataBitmap(&superBlock, dataBitmapBuffer);
-
+  unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
+  int dataBitmapSize = superBlock.data_bitmap_len * UFS_BLOCK_SIZE;
+  this->readDataBitmap(&superBlock, dataBitmapBuffer);
+  if (type == UFS_DIRECTORY) {
     //find free block num in bitmap. each bit represents one data block
     
     for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
@@ -268,7 +267,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   createFileInode.type = type;
   //assign inode_t .direct[]
   memset(createFileInode.direct, 0, sizeof(createFileInode.direct)); //initialize all elements inside .direct[] to 0
-  if (type = UFS_DIRECTORY) {
+  if (type == UFS_DIRECTORY) {
     createFileInode.direct[0] = unsigned(freeBlockNum);
   }
 
@@ -301,10 +300,10 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     for (int i = 2; i < maxPossibleEntries; ++i) { //set remaining dir entries to 'unallocated'
       dirEntries[i].inum = -1;
     }
+    disk->writeBlock(freeBlockNum, block); //write changes to block to data region
   }else { //filetype = file
     //DO NOTHING
   }
-  disk->writeBlock(freeBlockNum, block); //write changes to block to data region
 
   //PART 5: update parent data: update parent Inode to contain new File as a dir entry within a block in .direct[]
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -332,15 +331,19 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       writeInodeRegion(&superBlock, inodes); //write updated inode info to inode region
     }
 
-    char block2[UFS_BLOCK_SIZE];
-    disk->readBlock(curBlockNum, block2); //read all dir entries, store in `block` buffer
+    char parentBlock[UFS_BLOCK_SIZE];
+    disk->readBlock(curBlockNum, parentBlock); //read all dir entries, store in `block` buffer
+
+    dir_ent_t* parentDirEntries;
+    parentDirEntries = reinterpret_cast<dir_ent_t*>(parentBlock);
 
     //find 1st unallocated dir entry in current block
-    for (int j = 0; j < (UFS_BLOCK_SIZE / sizeof(dir_ent_t)); ++j) {
-      if (dirEntries[j].inum == -1) { //unallocated dir entry found, allocate it (assign new file/ dir info to it)
-        dirEntries[j].inum = freeInodeNum;
-        strcpy(dirEntries[j].name, name.c_str());
-        disk->writeBlock(curBlockNum, block);
+    int allEntriesInBlock = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //equivalent to maxPossibleEntries
+    for (int j = 0; j < allEntriesInBlock; ++j) {
+      if (parentDirEntries[j].inum == -1) { //unallocated dir entry found, allocate it (assign new file/ dir info to it)
+        parentDirEntries[j].inum = freeInodeNum;
+        strcpy(parentDirEntries[j].name, name.c_str());
+        disk->writeBlock(curBlockNum, parentBlock);
         parentInodeUpdated = true;
         break;
       }
@@ -376,7 +379,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
   }
 
   //size check
-  if (size < 0) {
+  if (size <= 0) {
     return -EINVALIDSIZE;
   }
 
@@ -388,7 +391,17 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
   //storage check
   super_t superBlock;
   this->readSuperBlock(&superBlock);
-  if (!this->diskHasSpace(&superBlock, 1, size, 0)) {
+  int curNumBlocksOccupied = curInode.size / UFS_BLOCK_SIZE; //current # of blocks file content is occupying
+  if (curInode.size % UFS_BLOCK_SIZE != 0) {
+    curNumBlocksOccupied++;
+  }
+  int newNumBlocksOccupied = size / UFS_BLOCK_SIZE; //current # of blocks file content is occupying
+  if (size % UFS_BLOCK_SIZE != 0) {
+    newNumBlocksOccupied++;
+  }
+  int additionalBlocksNeeded = newNumBlocksOccupied - curNumBlocksOccupied;
+
+  if (additionalBlocksNeeded > 0 && !this->diskHasSpace(&superBlock, 0, 0, additionalBlocksNeeded)) {
     return -ENOTENOUGHSPACE;
   }
 
@@ -426,12 +439,12 @@ void LocalFileSystem::readInodeRegion(super_t *super, inode_t *inodes) {
   delete[] inodeRegionBuffer;
 }
 
-
-//num_inodes and num_data store the total # of inodes/ data blocks in disk (allocated/ not allocated)
 bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numDataBytesNeeded, int numDataBlocksNeeded) {
-  numDataBlocksNeeded = (numDataBytesNeeded / UFS_BLOCK_SIZE);
-  if (numDataBytesNeeded % UFS_BLOCK_SIZE != 0) {
+  if (numDataBlocksNeeded == 0) { //assume 0 indicates numDataBlocksNeeded is not specified
+    numDataBlocksNeeded = (numDataBytesNeeded / UFS_BLOCK_SIZE);
+    if (numDataBytesNeeded % UFS_BLOCK_SIZE != 0) {
     numDataBlocksNeeded++;
+    }
   }
 
   super_t superBlock;
