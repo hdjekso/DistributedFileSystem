@@ -421,7 +421,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
   }
 
   //size check
-  if (size <= 0) {
+  if (size < 0) {
     return -EINVALIDSIZE;
   }
 
