@@ -473,8 +473,9 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
   this->readDataBitmap(&superBlock, dataBitmapBuffer);
 
   for (const auto &allocatedBlockNum: allocatedBlockNums) { //iterate over all previously allocated block nums
-    int byteIdx = allocatedBlockNum / 8;
-    int bitIdx = allocatedBlockNum % 8;
+    unsigned int normalizedBlockNum = allocatedBlockNum - superBlock.data_region_addr;
+    int byteIdx = normalizedBlockNum / 8;
+    int bitIdx = normalizedBlockNum % 8;
     dataBitmapBuffer[byteIdx] &= ~(1 << bitIdx); // Mark the block num as free (set bit to 0)
   }
   this->writeDataBitmap(&superBlock, dataBitmapBuffer); //write changes to data bitmap in disk
@@ -492,8 +493,9 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
 
   //update data bitmap with current block nums
   for (const auto &a: freeBlockNums) { //iterate over all block nums we want to alloacte
-    int byteIdx = a / 8;
-    int bitIdx = a % 8;
+    unsigned int normalizedBlockNum = a - superBlock.data_region_addr; //normalize block #
+    int byteIdx = normalizedBlockNum / 8;
+    int bitIdx = normalizedBlockNum % 8;
     dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the block num as allocated (set bit to 1)
   }
   this->writeDataBitmap(&superBlock, dataBitmapBuffer); //write changes to data bitmap in disk
@@ -506,7 +508,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
     for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
       for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
         if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-          freeBlockNum = (byteIdx * 8 + bitIdx) + superBlock.data_region_addr; //free block num found
+          freeBlockNum = (byteIdx * 8 + bitIdx) + superBlock.data_region_addr; //free block num found //FIXME: make sure `superBlock.data_region_addr` is appropriate
           freeBlockNums.push_back(freeBlockNum);
           dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
           numFreeBlocksFound++;

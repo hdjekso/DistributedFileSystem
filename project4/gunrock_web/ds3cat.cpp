@@ -44,26 +44,23 @@ int main(int argc, char *argv[]) {
 
   //print disk block #'s
   int numBlocks = fileSize / UFS_BLOCK_SIZE; //the # of blocks the file is stored in
-  //int* diskBlockNums = new int[numBlocks]; //array storing disk block #s
   for (int i = 0; i <= numBlocks; ++i) {
-    //diskBlockNums[i] = inode.direct[i];
-    /*if (inode.direct[i] == 0) {
-      break;
-    }*/
     cout << inode.direct[i] << endl;
   }
   cout << endl;
 
   //print file contents
   cout << "File data" << endl;
-  cout << buffer;
-  /*for (int i = 0; i < fileSize; ++i) {
-    cout << buffer[i];
-  }*/
-  //cout << endl;
 
-  //delete[] inodes;
+  //RESTORE THIS BEFORE SUBMITTING
+  //cout << buffer;
+
+  //COMMENT THIS OUT
+  for (int i = 0; i < fileSize; ++i) {
+    cout << buffer[i];
+  }
+  cout << endl;
+
   delete[] buffer;
-  //delete[] diskBlockNums;
   return 0;
 }

@@ -14,7 +14,8 @@
         "utility": "cpp",
         "deque": "cpp",
         "xtree": "cpp",
-        "xutility": "cpp"
+        "xutility": "cpp",
+        "random": "cpp"
     },
     "workbench.colorTheme": "Monokai Pro"
 }
