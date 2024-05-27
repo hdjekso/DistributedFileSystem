@@ -40,6 +40,9 @@ int LocalFileSystem::lookup(int parentInodeNumber, string name) {
 
   //read first block of dirEntries, and count total # of valid (allocated) dirEntries reference by parentInodeNumber
   int activeBlocks = parentInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  if (parentInode.size % UFS_BLOCK_SIZE != 0) {
+    activeBlocks++;
+  }
   //int numDirectoryEntries = parentInode.size / sizeof(dir_ent_t);
   //originally i < DIRECT_PTRS;
   for (int i = 0; i < activeBlocks; ++i) { //iterate over inode.direct
@@ -613,6 +616,9 @@ int LocalFileSystem::unlink(int parentInodeNumber, string name) {
   //get all alloacted blocks in unlinkInode, and reset block contents
   vector<unsigned int> unlinkBlockNums;
   int activeBlocks = unlinkInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  if (unlinkInode.size % UFS_BLOCK_SIZE != 0) {
+    activeBlocks++;
+  }
   for (int curBlock = 0; curBlock < activeBlocks; ++curBlock) {
     unsigned int curBlockNum = unlinkInode.direct[curBlock];
     unlinkBlockNums.push_back(curBlockNum); //store in vector
@@ -640,6 +646,9 @@ int LocalFileSystem::unlink(int parentInodeNumber, string name) {
 
   //largely copied from lookup()
   int parentActiveBlocks = parentInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  if (parentInode.size % UFS_BLOCK_SIZE != 0) {
+    parentActiveBlocks++;
+  }
   bool dirEntryReset = false;
   int entryToResetBlockNum; //used for writeBlock() and edge case
   int entryToResetBlockIdx; // used to check if edge case is true
@@ -689,9 +698,8 @@ int LocalFileSystem::unlink(int parentInodeNumber, string name) {
     int byteIdx = normalizedBlockNum / 8;
     int bitIdx = normalizedBlockNum % 8;
     dataBitmapBuffer[byteIdx] &= ~(1 << bitIdx); // Mark the block num as free (set bit to 0)
+    this->writeDataBitmap(&superBlock, dataBitmapBuffer);
   }
-  this->writeDataBitmap(&superBlock, dataBitmapBuffer);
-
 
   //update parentInode.size
   parentInode.size -= sizeof(dir_ent_t);
