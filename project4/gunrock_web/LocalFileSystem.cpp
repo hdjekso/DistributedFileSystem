@@ -39,13 +39,11 @@ int LocalFileSystem::lookup(int parentInodeNumber, string name) {
   }
 
   //read first block of dirEntries, and count total # of valid (allocated) dirEntries reference by parentInodeNumber
+  int activeBlocks = parentInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  //int numDirectoryEntries = parentInode.size / sizeof(dir_ent_t);
   //originally i < DIRECT_PTRS;
-  for (int i = 0; i < 1; ++i) { //iterate over inode.direct
+  for (int i = 0; i < activeBlocks; ++i) { //iterate over inode.direct
     int blockNum = parentInode.direct[i];
-    if (blockNum == 0) { // no more directory entry arrays
-      break; 
-    }
-
     char block[UFS_BLOCK_SIZE];
     disk->readBlock(blockNum, block); //read all dir entries, store in `block` buffer
 
@@ -381,6 +379,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
 
     //FIXME: use numDirEntries
     int allEntriesInBlock = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //equivalent to maxPossibleEntries
+
     for (int j = 0; j < allEntriesInBlock; ++j) {
       if (parentDirEntries[j].inum == -1) { //unallocated dir entry found, allocate it (assign new file/ dir info to it)
         parentDirEntries[j].inum = freeInodeNum;
@@ -450,6 +449,8 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
 
   //FIXME: do we need to set inum to -1?
   vector<unsigned int> allocatedBlockNums; //vector that stores previously allocated data block nums. used to update data bitmap
+  int numDirEntries = curInode.size / sizeof(dir_ent_t);
+  int dirEntriesRemaining = numDirEntries;
   //reset .inum to -1 in all allocated dir entries of curInode (i.e. deallocate all dir entries)
   for (int blockIdx = 0; blockIdx < curNumBlocksOccupied; ++blockIdx) {
     int curBlockNum = curInode.direct[blockIdx];
@@ -460,11 +461,18 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
     //dir entries array. 
     dir_ent_t* dirEntries;
     dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array. modifying dirEntries modifies `block` as well
-    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
-    int numDirEntries = curInode.size / sizeof(dir_ent_t);
+    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries in block
+    
 
-    for (int i = 0; i < min(numDirEntries, maxPossibleEntries); ++i) { //set allocated dir entries to 'unallocated'
+    for (int i = 0; i < min(dirEntriesRemaining, maxPossibleEntries); ++i) { //set allocated dir entries to 'unallocated'
       dirEntries[i].inum = -1;
+      dirEntriesRemaining--;
+      if (dirEntriesRemaining == 0) {
+        break;
+      }
+    }
+    if (dirEntriesRemaining == 0) {
+      break;
     }
   }
 
@@ -543,16 +551,157 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
 }
 
 int LocalFileSystem::unlink(int parentInodeNumber, string name) {
-  //error checks
-  //dir not empty -> dir to be removed has subdirectories/ files within
+  super_t superBlock;
+  this->readSuperBlock(&superBlock);
+  
+  //ERROR CHECKS
+  inode_t* inodes = new inode_t[superBlock.num_inodes]; //create inode table
+  this->readInodeRegion(&superBlock, inodes); // populate inode table
 
-  //get inode number of file using lookup()
-  //empty inode contents of file
-  //find dir entry containing the file within a block in parentInode's .direct[] array. remove dir entry within block
+
+  //check if parentInode exists
+  inode_t tempParentInode;
+  int result = this->stat(parentInodeNumber, &tempParentInode); //stat() returns -EINVALIDINODE if parentInode is invalid
+  //check if stat() returned -EINVALIDINODE
+  if (result == -EINVALIDINODE) {
+    return -EINVALIDINODE;
+  }
+
+  //check if name is valid
+  if (name.length() >= DIR_ENT_NAME_SIZE) { //char[] is terminated by /0, 27 chars only
+    return -EINVALIDNAME;
+  }
+
+  //check if we are attempting to unlink '.' or '..'
+  if (name == "." || name == "..") {
+    return -EUNLINKNOTALLOWED;
+  }
+
+  //get inode num of file to be removed
+  int unlinkInodeNum = lookup(parentInodeNumber, name);
+  //check if file exists. if not, return
+  if (unlinkInodeNum == -ENOTFOUND) {
+    return 0;
+  }
+  
+  inode_t& unlinkInode = inodes[unlinkInodeNum]; //get the inode we want to remove (reference: updating `createFileInode` updates `inodes` as well)
+  inode_t& parentInode = inodes[parentInodeNumber]; // create another instance of parent inode, this time as a reference to `inodes`
+
+  //check if dir is empty: dir not empty -> dir to be removed has subdirectories/ files within
+  if (unlinkInode.type == UFS_DIRECTORY) {
+    int numDirectoryEntries = unlinkInode.size / sizeof(dir_ent_t);
+    if (numDirectoryEntries != 2) { //dir is not empty, contains stuff other than '.' and '..'
+      return -EDIRNOTEMPTY;
+    }
+  }
+  //ERROR CHECKS OVER //
+
+
+  //free inode num in inode bitmap
+  unsigned char inodeBitmapBuffer[superBlock.inode_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
+  this->readInodeBitmap(&superBlock, inodeBitmapBuffer);
+
+  int unlinkInodeByteIdx = unlinkInodeNum / 8;
+  int unlinkInodeBitIdx = unlinkInodeNum % 8;
+  inodeBitmapBuffer[unlinkInodeByteIdx] &= ~(1 << unlinkInodeBitIdx); // Mark the block num as free (set bit to 0)
+  this->writeInodeBitmap(&superBlock, inodeBitmapBuffer); //write changes to data bitmap in disk
+
+  //initialize empty data block buffer, used to reset blocks
+  unsigned char emptyBlockBuffer[UFS_BLOCK_SIZE];
+  memset(emptyBlockBuffer, 0, UFS_BLOCK_SIZE); // Set all bytes in the buffer to zero
+
+  //get all alloacted blocks in unlinkInode, and reset block contents
+  vector<unsigned int> unlinkBlockNums;
+  int activeBlocks = unlinkInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  for (int curBlock = 0; curBlock < activeBlocks; ++curBlock) {
+    unsigned int curBlockNum = unlinkInode.direct[curBlock];
+    unlinkBlockNums.push_back(curBlockNum); //store in vector
+    disk->writeBlock(curBlockNum, emptyBlockBuffer); //reset block contents
+  }
+
+  //free all blocks in data bitmap (block nums found from .direct[])
+  unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store data bitmap
+  this->readDataBitmap(&superBlock, dataBitmapBuffer);
+
+  for (unsigned int unlinkBlockNum: unlinkBlockNums) {
+    unsigned int normalizedBlockNum = unlinkBlockNum - superBlock.data_region_addr;
+    int byteIdx = normalizedBlockNum / 8;
+    int bitIdx = normalizedBlockNum % 8;
+    dataBitmapBuffer[byteIdx] &= ~(1 << bitIdx); // Mark the block num as free (set bit to 0)
+  }
+  this->writeDataBitmap(&superBlock, dataBitmapBuffer);
+
+  //empty unlinkInode contents
+  unlinkInode.size = 0;
+  unlinkInode.type = -1;
+  this->writeInodeRegion(&superBlock, inodes);
+
+  //find dir entry of the file within a block in parentInode's .direct[] array. remove dir entry within block. EDGE CASE: if a whole block only contains unlinkFile, deallocate that block
+
+  //largely copied from lookup()
+  int parentActiveBlocks = parentInode.size / UFS_BLOCK_SIZE; //allocated blocks
+  bool dirEntryReset = false;
+  int entryToResetBlockNum; //used for writeBlock() and edge case
+  int entryToResetBlockIdx; // used to check if edge case is true
+
+  for (int i = 0; i < parentActiveBlocks; ++i) { //iterate over inode.direct
+    int blockNum = parentInode.direct[i];
+    char parentDirectBlock[UFS_BLOCK_SIZE];
+    disk->readBlock(blockNum, parentDirectBlock); //read all dir entries, store in `block` buffer
+
+    //dir entries array
+    dir_ent_t* parentDirEntries;
+    parentDirEntries = reinterpret_cast<dir_ent_t*>(parentDirectBlock); //populate dirEntries array
+    int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries
+
+    //TODO: do all allocated dir_entries have to come before unallocated ones? assume yes
+    for (int j = 0; j < maxPossibleEntries; ++j) {
+      if (parentDirEntries[j].inum != -1) {
+        string dirName = parentDirEntries[j].name;
+        if (dirName == name) { //file found, return its inode num
+          dir_ent_t entryToReset = parentDirEntries[j]; //create copy of dir ent we want to reset/ remove
+          entryToResetBlockNum = blockNum;
+          entryToResetBlockIdx = i;
+
+          //shift all subsequent dir entries to the left by 1
+          for (int k = j; k < maxPossibleEntries - 1; ++k) {
+            parentDirEntries[k] = parentDirEntries[k + 1];
+          }
+
+          //place entry at end of dir entries array
+          parentDirEntries[maxPossibleEntries - 1] = entryToReset;
+          parentDirEntries[maxPossibleEntries - 1].inum = -1; // Indicate that it is not allocated
+          parentDirEntries[maxPossibleEntries - 1].name[0] = '\0'; // Reset name to an empty string
+          dirEntryReset = true;
+          break;
+        }
+      }
+    }
+    if (dirEntryReset) {
+      disk->writeBlock(entryToResetBlockNum, parentDirectBlock); //write changes made to block, to disk
+      break;
+    }
+  }
+  //EDGE CASE: dir_ent is stored in a separate block of its own - deallocate block in data bitmap
+  if (parentInode.size % UFS_BLOCK_SIZE == sizeof(dir_ent_t) && entryToResetBlockIdx == (parentActiveBlocks - 1)) {
+    //disk->writeBlock(entryToResetBlockNum, emptyBlockBuffer); //reset block contents
+    unsigned int normalizedBlockNum = entryToResetBlockNum - superBlock.data_region_addr;
+    int byteIdx = normalizedBlockNum / 8;
+    int bitIdx = normalizedBlockNum % 8;
+    dataBitmapBuffer[byteIdx] &= ~(1 << bitIdx); // Mark the block num as free (set bit to 0)
+  }
+  this->writeDataBitmap(&superBlock, dataBitmapBuffer);
+
+
+  //update parentInode.size
+  parentInode.size -= sizeof(dir_ent_t);
+  this->writeInodeRegion(&superBlock, inodes);
+
   return 0;
 }
 
-//helper functions
+//HELPER FUNCTIONS
+///////////////////////////////////////////////////////////////////////////////////
 void LocalFileSystem::readInodeBitmap(super_t *super, unsigned char *inodeBitmap) {
   disk->readBlock(super->inode_bitmap_addr, inodeBitmap);
 }
@@ -598,14 +747,6 @@ bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numD
       freeInodeCount++; //free inode found
     }
   }
-  /*int freeInodeCount = 0;
-  for (int byteIdx = 0; byteIdx < inodeBitmapSize; ++byteIdx) {
-    for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
-      if ((inodeBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-        freeInodeCount++; //free inode found
-      }
-    }
-  }*/
 
   //create buffer to store data bitmap
   unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
@@ -621,13 +762,6 @@ bool LocalFileSystem::diskHasSpace(super_t *super, int numInodesNeeded, int numD
       freeDataBlocksCount++; //free data block found
     }
   }
-  /*for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
-    for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
-      if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-        freeDataBlocksCount++; //free data block found
-      }
-    }
-  }*/
 
   if (freeDataBlocksCount >= numDataBlocksNeeded && freeInodeCount >= numInodesNeeded) {
     return true;

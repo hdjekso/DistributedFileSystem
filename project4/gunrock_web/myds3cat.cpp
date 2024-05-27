@@ -53,13 +53,13 @@ int main(int argc, char *argv[]) {
   cout << "File data" << endl;
 
   //RESTORE THIS BEFORE SUBMITTING
-  cout << buffer;
+  //cout << buffer;
 
   //COMMENT THIS OUT
-  /*for (int i = 0; i < fileSize; ++i) {
+  for (int i = 0; i < fileSize; ++i) {
     cout << buffer[i];
   }
-  cout << endl;*/
+  cout << endl;
 
   delete[] buffer;
   return 0;

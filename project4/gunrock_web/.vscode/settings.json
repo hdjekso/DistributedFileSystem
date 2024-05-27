@@ -15,7 +15,10 @@
         "deque": "cpp",
         "xtree": "cpp",
         "xutility": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "type_traits": "cpp",
+        "system_error": "cpp",
+        "xlocale": "cpp"
     },
     "workbench.colorTheme": "Monokai Pro"
 }
