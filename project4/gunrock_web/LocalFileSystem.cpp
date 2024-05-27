@@ -450,19 +450,18 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
 
   //NOT NEEDED :update curInode.direct[] blocks if need be: allocate new blocks & find free block nums OR deallocate blocks if need be
 
-  //FIXME: do we need to set inum to -1?
+  //do not set inum to -1
   vector<unsigned int> allocatedBlockNums; //vector that stores previously allocated data block nums. used to update data bitmap
   int numDirEntries = curInode.size / sizeof(dir_ent_t);
-  int dirEntriesRemaining = numDirEntries;
-  //reset .inum to -1 in all allocated dir entries of curInode (i.e. deallocate all dir entries)
+  //int dirEntriesRemaining = numDirEntries;
   for (int blockIdx = 0; blockIdx < curNumBlocksOccupied; ++blockIdx) {
     int curBlockNum = curInode.direct[blockIdx];
     allocatedBlockNums.push_back(curBlockNum); //store block num in vector
-    char block[UFS_BLOCK_SIZE];
-    disk->readBlock(curBlockNum, block); //read contents of free data block, store in `block` buffer
+    //char block[UFS_BLOCK_SIZE];
+    //disk->readBlock(curBlockNum, block); //read contents of free data block, store in `block` buffer
 
     //dir entries array. 
-    dir_ent_t* dirEntries;
+    /*dir_ent_t* dirEntries;
     dirEntries = reinterpret_cast<dir_ent_t*>(block); //populate dirEntries array. modifying dirEntries modifies `block` as well
     int maxPossibleEntries = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //max # of dir entries in block
     
@@ -476,7 +475,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
     }
     if (dirEntriesRemaining == 0) {
       break;
-    }
+    }*/
   }
 
   //update data bitmap
@@ -519,7 +518,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
     for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
       for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
         if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-          freeBlockNum = (byteIdx * 8 + bitIdx) + superBlock.data_region_addr; //free block num found //FIXME: make sure `superBlock.data_region_addr` is appropriate
+          freeBlockNum = (byteIdx * 8 + bitIdx) + superBlock.data_region_addr; //free block num found
           freeBlockNums.push_back(freeBlockNum);
           dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
           numFreeBlocksFound++;
