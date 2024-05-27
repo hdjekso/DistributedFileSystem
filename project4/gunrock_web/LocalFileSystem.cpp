@@ -452,7 +452,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
 
   //do not set inum to -1
   vector<unsigned int> allocatedBlockNums; //vector that stores previously allocated data block nums. used to update data bitmap
-  int numDirEntries = curInode.size / sizeof(dir_ent_t);
+  //int numDirEntries = curInode.size / sizeof(dir_ent_t);
   //int dirEntriesRemaining = numDirEntries;
   for (int blockIdx = 0; blockIdx < curNumBlocksOccupied; ++blockIdx) {
     int curBlockNum = curInode.direct[blockIdx];
@@ -479,8 +479,12 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
   }
 
   //update data bitmap
+  //TODO: current approach is to not decrease blocks assigned to file even if curNumBlocksOccupied < newNumBlocksOccupied
+  //vector<unsigned int> freeBlockNums = allocatedBlockNums; //COMMENT THIS OUT IF REVERTING TO OLD APPROACH
   unsigned char dataBitmapBuffer[superBlock.data_bitmap_len * UFS_BLOCK_SIZE]; //buffer to store bitmap
   this->readDataBitmap(&superBlock, dataBitmapBuffer);
+
+  //OLD APPROACH: RESTORE THIS IF NEEDED
 
   for (const auto &allocatedBlockNum: allocatedBlockNums) { //iterate over all previously allocated block nums
     unsigned int normalizedBlockNum = allocatedBlockNum - superBlock.data_region_addr;
@@ -508,7 +512,7 @@ int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {
     int bitIdx = normalizedBlockNum % 8;
     dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the block num as allocated (set bit to 1)
   }
-  this->writeDataBitmap(&superBlock, dataBitmapBuffer); //write changes to data bitmap in disk
+  this->writeDataBitmap(&superBlock, dataBitmapBuffer); //write changes to data bitmap in disk*/
 
   //find more free block nums, and update data bitmap
   if (curNumBlocksOccupied < newNumBlocksOccupied) {
