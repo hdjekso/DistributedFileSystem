@@ -332,7 +332,6 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     parentDirEntries = reinterpret_cast<dir_ent_t*>(parentBlock);
 
     //find 1st unallocated dir entry in current block
-    //FIXME: use numDirEntries to modify new dir entry
     int allEntriesInBlock = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //equivalent to maxPossibleEntries
     for (int j = 0; j < allEntriesInBlock; ++j) {
       if (parentDirEntries[j].inum == -1) { //unallocated dir entry found, allocate it (assign new file/ dir info to it)
@@ -356,13 +355,13 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     for (int byteIdx = 0; byteIdx < dataBitmapSize; ++byteIdx) {
       for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
         if ((dataBitmapBuffer[byteIdx] & (1 << bitIdx)) == 0) { //apply mask with 1 at position `bitIndex`, and AND it with current byte
-          parentFreeBlockNum = (byteIdx * 8 + bitIdx) + superBlock.data_region_addr ; //free block num found
+          parentFreeBlockNum = (byteIdx * 8 + bitIdx) + superBlock.data_region_addr; //free block num found
           dataBitmapBuffer[byteIdx] |= (1 << bitIdx); // Mark the data block as used (set bit to 1)
           parentFreeBlockNumFound = true;
           break;
         }
       }
-      if (parentFreeBlockNumFound) {
+      if (parentFreeBlockNumFound) { 
         break;
       }
     }
@@ -380,8 +379,10 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
     dir_ent_t* parentDirEntries;
     parentDirEntries = reinterpret_cast<dir_ent_t*>(newParentBlock);
 
-    //FIXME: use numDirEntries
-    int allEntriesInBlock = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //equivalent to maxPossibleEntries
+    parentDirEntries[0].inum = parentFreeBlockNum;
+    strcpy(parentDirEntries[0].name, name.c_str());
+    disk->writeBlock(parentFreeBlockNum, newParentBlock);
+    /*int allEntriesInBlock = UFS_BLOCK_SIZE / sizeof(dir_ent_t); //equivalent to maxPossibleEntries
 
     for (int j = 0; j < allEntriesInBlock; ++j) {
       if (parentDirEntries[j].inum == -1) { //unallocated dir entry found, allocate it (assign new file/ dir info to it)
@@ -390,7 +391,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
         disk->writeBlock(parentFreeBlockNum, newParentBlock);
         break;
       }
-    }    
+    }*/    
   }
 
   //PART 6: update parent inode parameter(s)
