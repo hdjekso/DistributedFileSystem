@@ -30,14 +30,14 @@ void DistributedFileSystemService::get(HTTPRequest *request, HTTPResponse *respo
 
   path = path.substr(5); //remove '/ds3/'
 
-  int parentInode = UFS_ROOT_DIRECTORY_INODE_NUMBER;
+  int parentInum = UFS_ROOT_DIRECTORY_INODE_NUMBER;
   vector<string> tokens = splitPath(path); //store each subpath/ token in a vector
   inode_t readInode;
 
   //iterate from root until desired file/ directory is reached
   for (size_t i = 0; i < tokens.size(); i++) {
     string subPathName = tokens[i];
-    int curInodeNum = fileSystem->lookup(parentInode, subPathName); //get inum of current subpath/ file
+    int curInodeNum = fileSystem->lookup(parentInum, subPathName); //get inum of current subpath/ file
     if (curInodeNum == -EINVALIDINODE || curInodeNum == -ENOTFOUND) {
       throw ClientError::notFound();
     }
@@ -45,13 +45,13 @@ void DistributedFileSystemService::get(HTTPRequest *request, HTTPResponse *respo
     if (result == -EINVALIDINODE) {
       throw ClientError::notFound();
     }
-    parentInode = curInodeNum;
+    parentInum = curInodeNum; // will store readInode's num at the end
   }
 
   //return different stuff based on filetype
   if (readInode.type == UFS_REGULAR_FILE) {
     char buffer[readInode.size]; //store file contents
-    int bytesRead = fileSystem->read(parentInode, buffer, readInode.size);
+    int bytesRead = fileSystem->read(parentInum, buffer, readInode.size);
     if (bytesRead < 0) {
       throw ClientError::notFound();
     }
@@ -64,7 +64,7 @@ void DistributedFileSystemService::get(HTTPRequest *request, HTTPResponse *respo
     vector<string> dirEntriesVector;
 
     char buffer[readInode.size];
-    int bytesRead = fileSystem->read(parentInode, buffer, readInode.size); //read in all dirEntries
+    int bytesRead = fileSystem->read(parentInum, buffer, readInode.size); //read in all dirEntries
     if (bytesRead < 0) {
       throw ClientError::notFound();
     }
@@ -102,7 +102,66 @@ void DistributedFileSystemService::get(HTTPRequest *request, HTTPResponse *respo
 }
 
 void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *response) {
-  response->setBody("");
+  string path = request->getPath();
+  if (path.size() <= 5) {
+    throw ClientError::badRequest();
+  }
+  path = path.substr(5); // Remove "/ds3/"
+  string content = request->getBody(); //get file contents from argument
+
+  int parentInode = UFS_ROOT_DIRECTORY_INODE_NUMBER; //parent inode of the file we are trying to PUT
+  vector<string> tokens = splitPath(path);
+  inode_t curInode;
+
+  fileSystem->disk->beginTransaction();
+  try {
+    for (size_t i = 0; i < tokens.size() - 1; i++) { //stop right before the PUT file
+      string curDirName = tokens[i];
+      int curDirEntryInum = fileSystem->lookup(parentInode, curDirName);
+      if (curDirEntryInum == -ENOTFOUND || curDirEntryInum == -EINVALIDINODE) {
+        // subDir doesn't exist, create it
+        curDirEntryInum = fileSystem->create(parentInode, UFS_DIRECTORY, curDirName); //create subDir and get its inum
+        if (curDirEntryInum < 0) { //error creating subDir
+          throw ClientError::conflict();
+        }
+      } else {
+        fileSystem->stat(curDirEntryInum, &curInode); //get 
+        if (curInode.type != UFS_DIRECTORY) { //subdir in argument currently exists as a file
+          throw ClientError::conflict();
+        }
+      }
+      parentInode = curDirEntryInum;
+    }
+
+    //create new file/dir (at end of path) if needed
+    inode_t putInode;
+    int vectorLastIdx = tokens.size() - 1;
+    string putFileName = tokens[vectorLastIdx];
+    int putFileInum = fileSystem->lookup(parentInode, putFileName); //get inum of new file
+    if (putFileInum < 0) { //new file doesn't exist, create it
+      putFileInum = fileSystem->create(parentInode, UFS_REGULAR_FILE, vectorLastIdx);
+      if (putFileInum < 0) { //create failed
+        throw ClientError::conflict();
+      }
+    } else { //file/dir already exists, check if type matches
+      fileSystem->stat(putFileInum, &putInode);
+      if (putInode.type != UFS_REGULAR_FILE) { //is currently a dir, return error
+        throw ClientError::conflict();
+      }
+    }
+
+    //all error checks passed, file/dir is created, write to disk
+    int result = fileSystem->write(putFileInum, content.c_str(), content.size());
+    if (result == -ENOTENOUGHSPACE) {
+      throw ClientError::insufficientStorage();
+    }
+
+    fileSystem->disk->commit();
+  } catch (...) { //catch all errors
+    fileSystem->disk->rollback();
+    throw;
+  }
+  response->setBody("OK"); //PUT request completed
 }
 
 void DistributedFileSystemService::del(HTTPRequest *request, HTTPResponse *response) {
