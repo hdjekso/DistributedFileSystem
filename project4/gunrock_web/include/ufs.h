@@ -17,7 +17,7 @@
 typedef struct {
     int type;   // UFS_DIRECTORY or UFS_REGULAR
     int size;   // bytes
-    unsigned int direct[DIRECT_PTRS]; //stores block #'s. those blocks contain directory entries
+    unsigned int direct[DIRECT_PTRS];
 } inode_t;
 
 #define DIR_ENT_NAME_SIZE (28)
@@ -29,11 +29,11 @@ typedef struct {
 // presumed: block 0 is the super block
 typedef struct __super {
     int inode_bitmap_addr; // block address (in blocks)
-    int inode_bitmap_len;  // in blocks (ALLOCATED INODES ONLY)
+    int inode_bitmap_len;  // in blocks
     int data_bitmap_addr;  // block address (in blocks)
-    int data_bitmap_len;   // in blocks (ALLOCATED DATABLOCKS ONLY)
+    int data_bitmap_len;   // in blocks
     int inode_region_addr; // block address (in blocks)
-    int inode_region_len;  // in blocks 
+    int inode_region_len;  // in blocks
     int data_region_addr;  // block address (in blocks)
     int data_region_len;   // in blocks
     int num_inodes;        // just the number of inodes
