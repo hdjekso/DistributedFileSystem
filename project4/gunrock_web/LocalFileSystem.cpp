@@ -99,7 +99,8 @@ int LocalFileSystem::stat(int inodeNumber, inode_t *inode) {
 }
 
 int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
-  bool invalidSize = false;
+  //bool invalidSize = false;
+  int originalSize = size;
   
   super_t superBlock;
   this->readSuperBlock(&superBlock);
@@ -127,7 +128,7 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   // prevent reading after eof
   int fileSize = inode.size;
   if (size > fileSize) { 
-    invalidSize = true;
+    //invalidSize = true;
     size = fileSize;
   }
   /////////////////////////////////////
@@ -153,9 +154,10 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
     cerr << "error with read(): incorrect number of bytes read; bytesRead: " << bytesRead << ", size: " << size << endl;
     return 1;
   }
-  if (invalidSize) {
-    //return -EINVALIDSIZE;
-    return size; //testing if this passes write() test cases
+  //if (invalidSize) {
+  if (originalSize > DIRECT_PTRS * UFS_BLOCK_SIZE) {
+    return -EINVALIDSIZE;
+    //return size; //testing if this passes write() test cases
   }
   return size;
 }
