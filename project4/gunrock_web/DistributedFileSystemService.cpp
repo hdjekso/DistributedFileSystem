@@ -115,14 +115,16 @@ void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *respo
     for (size_t i = 0; i < tokens.size() - 1; i++) { //stop right before the PUT file
       string curDirName = tokens[i];
       int curDirEntryInum = fileSystem->lookup(parentInum, curDirName);
-      if (curDirEntryInum == -ENOTFOUND || curDirEntryInum == -EINVALIDINODE) {
+      if (curDirEntryInum == -ENOTFOUND) {
         // subDir doesn't exist, create it
         curDirEntryInum = fileSystem->create(parentInum, UFS_DIRECTORY, curDirName); //create subDir and get its inum
         if (curDirEntryInum < 0) { //error creating subDir
-          throw ClientError::conflict();
+          throw ClientError::badRequest();
         }
-      } else {
-        fileSystem->stat(curDirEntryInum, &curInode); //get 
+      } else if (curDirEntryInum == -EINVALIDINODE) { //parent inode doesn't exist
+        throw ClientError::notFound();
+      } else { //file/dir already exists
+        fileSystem->stat(curDirEntryInum, &curInode); //get inode info of current subdir
         if (curInode.type != UFS_DIRECTORY) { //subdir in argument currently exists as a file
           throw ClientError::conflict();
         }
@@ -130,16 +132,20 @@ void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *respo
       parentInum = curDirEntryInum;
     }
 
-    //create new file/dir (at end of path) if needed
+    //create new file/dir (at end of path) if it doesn't already exist
     inode_t putInode;
     int vectorLastIdx = tokens.size() - 1;
     string putFileName = tokens[vectorLastIdx];
     int putFileInum = fileSystem->lookup(parentInum, putFileName); //get inum of new file
-    if (putFileInum == -ENOTFOUND || putFileInum == -EINVALIDINODE) { //new file doesn't exist, create it
+    if (putFileInum == -ENOTFOUND) { //new file doesn't exist, create it
       putFileInum = fileSystem->create(parentInum, UFS_REGULAR_FILE, putFileName);
-      if (putFileInum < 0) { //create failed
-        throw ClientError::conflict();
+      if (putFileInum == -ENOTENOUGHSPACE) { //create failed, not enough space
+        throw ClientError::insufficientStorage();
+      } else if (putFileInum < 0) { //all other create errors
+        throw ClientError::badRequest();
       }
+    } else if (putFileInum == -EINVALIDINODE) { //lookup failed
+      throw ClientError::notFound();
     } else { //file/dir already exists, check if type matches
       fileSystem->stat(putFileInum, &putInode);
       if (putInode.type != UFS_REGULAR_FILE) { //is currently a dir, return error
@@ -151,6 +157,8 @@ void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *respo
     int result = fileSystem->write(putFileInum, content.c_str(), content.size());
     if (result == -ENOTENOUGHSPACE) {
       throw ClientError::insufficientStorage();
+    } else if (result < 0) { //all other errors
+      throw ClientError::badRequest();
     }
 
     fileSystem->disk->commit();

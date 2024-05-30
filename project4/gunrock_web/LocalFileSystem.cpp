@@ -313,9 +313,8 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
       dirEntries[i].inum = -1;
     }
     disk->writeBlock(freeBlockNum, block); //write changes to block to data region
-  }else { //filetype = file
-    //DO NOTHING
   }
+  //DO NOTHING if filetype = file
 
   //PART 5: update parent data: update parent Inode to contain new File as a dir entry within a block in .direct[]
   //////////////////////////////////////////////////////////////////////////////////////////////
