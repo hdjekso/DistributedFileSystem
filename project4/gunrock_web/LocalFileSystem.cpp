@@ -403,7 +403,7 @@ int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
   this->writeInodeRegion(&superBlock, inodes);
 
   delete[] inodes;
-  return 0;
+  return freeInodeNum;
 }
 
 int LocalFileSystem::write(int inodeNumber, const void *buffer, int size) {

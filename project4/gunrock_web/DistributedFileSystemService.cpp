@@ -112,12 +112,14 @@ void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *respo
 
   fileSystem->disk->beginTransaction();
   try {
+    //traverse through entire file path
     for (size_t i = 0; i < tokens.size() - 1; i++) { //stop right before the PUT file
       string curDirName = tokens[i];
       int curDirEntryInum = fileSystem->lookup(parentInum, curDirName);
       if (curDirEntryInum == -ENOTFOUND) {
         // subDir doesn't exist, create it
         curDirEntryInum = fileSystem->create(parentInum, UFS_DIRECTORY, curDirName); //create subDir and get its inum
+        //cout << "subDir " << curDirName << " doesn't exist, create it" << endl;
         if (curDirEntryInum < 0) { //error creating subDir
           throw ClientError::badRequest();
         }
@@ -138,6 +140,7 @@ void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *respo
     string putFileName = tokens[vectorLastIdx];
     int putFileInum = fileSystem->lookup(parentInum, putFileName); //get inum of new file
     if (putFileInum == -ENOTFOUND) { //new file doesn't exist, create it
+      //cout << "new file doesn't exist, create it: " << putFileName << endl;
       putFileInum = fileSystem->create(parentInum, UFS_REGULAR_FILE, putFileName);
       if (putFileInum == -ENOTENOUGHSPACE) { //create failed, not enough space
         throw ClientError::insufficientStorage();
@@ -154,6 +157,7 @@ void DistributedFileSystemService::put(HTTPRequest *request, HTTPResponse *respo
     }
 
     //all error checks passed, file/dir is created, write to disk
+    //cout << "writing to file" << endl;
     int result = fileSystem->write(putFileInum, content.c_str(), content.size());
     if (result == -ENOTENOUGHSPACE) {
       throw ClientError::insufficientStorage();

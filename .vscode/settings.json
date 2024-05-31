@@ -1,3 +1,6 @@
 {
-    "workbench.colorTheme": "Monokai Pro"
+    "workbench.colorTheme": "Monokai Pro",
+    "files.associations": {
+        "vector": "cpp"
+    }
 }
